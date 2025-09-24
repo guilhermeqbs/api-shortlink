@@ -1,63 +1,79 @@
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const path = require('path');
-const urlCurtaRoutes = require('./routes/urlCurtaRoutes');
-const app = express();
-const PORT = process.env.PORT || 5000;
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const morgan = require('morgan');
 
+const urlCurtaRoutes = require('./routes/urlCurtaRoutes');
+const logger = require('./config/logger');
+
+const app = express();
+const PORT = process.env.PORT || 5000;
 
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS || 'http://localhost:3000',
-  credentials: true,
+  origin: process.env.ALLOWED_ORIGINS,
+  credentials: true
 }));
-app.use(express.json());
 
+app.use(express.json({ limit: '10mb' }));
 app.use(helmet());
 
-const createLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+// Logging com Morgan
+app.use(morgan('combined', { stream: logger.stream }));
+
+// Rate limiting
+app.use('/api/shorten', rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
   max: 100,
-   message: 'Muitas tentativas, tente novamente em 15 minutos'
+  message: { error: 'Muitas tentativas, aguarde 15 minutos' }
+}));
+
+app.use('/:hashcode', rateLimit({
+  windowMs: 60 * 1000, // 1 minuto  
+  max: 50,
+  message: { error: 'Muitos acessos, aguarde 1 minuto' }
+}));
+
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => logger.info('Conectado ao MongoDB'))
+  .catch(err => {
+    logger.error('Erro MongoDB:', err.message);
+    process.exit(1);
+  });
+
+// Health check
+app.get('/health', async (req, res) => {
+  try {
+    await mongoose.connection.db.admin().ping();
+    res.json({ status: 'OK', timestamp: new Date().toISOString() });
+  } catch (error) {
+    res.status(503).json({ 
+      status: 'ERROR', 
+      timestamp: new Date().toISOString() 
+    });
+  }
 });
-
-const redirectLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minuto
-  max: 50, // Mais permissivo para redirects
-  message: 'Muitos acessos, aguarde 1 minuto'
-});
-
-// Aplicar rate limiters ANTES das rotas
-app.use('/api/shorten', createLimiter);
-app.use('/:hashcode', redirectLimiter);
-
-mongoose.connect('mongodb://localhost:27017/shortener', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-  .then(() => console.log('Conectado ao MongoDB'))
-  .catch(err => console.error('Erro ao conectar ao MongoDB:', err));
 
 // Rota da API para criação (prefixo /api)
 app.use('/api', urlCurtaRoutes);
 // Rotas de redirect direto (sem prefixo) para acesso via hashcode
 app.use('/', urlCurtaRoutes);
 
-// Middleware de erro global
+// Middleware de erro simples
 app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ error: 'Algo deu errado!' });
+    logger.error('Server Error:', err.message);
+    res.status(500).json({ error: 'Erro interno do servidor' });
 }); 
 
-// Rota 404
+// 404
 app.use((req, res) => {
     res.status(404).json({ error: 'Rota não encontrada' });
 }); 
 
 app.listen(PORT, () => {
-  console.log(`Servidor na porta ${PORT}`);
+  logger.info(`Servidor rodando na porta ${PORT}`);
 });
 
 module.exports = app;
