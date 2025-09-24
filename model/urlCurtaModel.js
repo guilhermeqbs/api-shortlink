@@ -13,7 +13,8 @@ const urlCurtaSchema = new mongoose.Schema({
                 } catch(err) {
                     return false;
                 }
-            }
+            },
+            message: 'URL deve ser válida e usar protocolo HTTP ou HTTPS'
         }
     },
     hashcode: {
@@ -30,8 +31,8 @@ const urlCurtaSchema = new mongoose.Schema({
     }
 });
 
-// Índices para melhor performance
-urlCurtaSchema.index({ hashcode: 1 });
+
 urlCurtaSchema.index({ urlLonga: 1 });
+urlCurtaSchema.index({ criadoEm: -1 });
 
 module.exports = mongoose.model('UrlCurta', urlCurtaSchema);
