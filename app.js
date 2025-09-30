@@ -12,6 +12,9 @@ const logger = require('./config/logger');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Configurar trust proxy 
+app.set('trust proxy', true);
+
 app.use(cors({
   origin: process.env.ALLOWED_ORIGINS,
   credentials: true
@@ -39,7 +42,11 @@ app.use('/:hashcode', rateLimit({
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => logger.info('Conectado ao MongoDB'))
   .catch(err => {
-    logger.error('Erro MongoDB:', err.message);
+    logger.error('Erro ao conectar MongoDB:', {
+      message: err.message,
+      stack: err.stack,
+      uri: process.env.MONGODB_URI ? 'URI configurada' : 'URI não encontrada'
+    });
     process.exit(1);
   });
 
