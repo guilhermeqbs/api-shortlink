@@ -12,8 +12,8 @@ const logger = require('./config/logger');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Configurar trust proxy 
-app.set('trust proxy', true);
+// Configurar trust proxy específico para Render (mais seguro)
+app.set('trust proxy', 1);
 
 app.use(cors({
   origin: process.env.ALLOWED_ORIGINS,
@@ -26,18 +26,32 @@ app.use(helmet());
 // Logging com Morgan
 app.use(morgan('combined', { stream: logger.stream }));
 
-// Rate limiting
-app.use('/api/shorten', rateLimit({
+// Rate limiting com configuração mais específica para proxies
+const limiterConfig = {
   windowMs: 15 * 60 * 1000, // 15 minutos
   max: 100,
-  message: { error: 'Muitas tentativas, aguarde 15 minutos' }
-}));
+  message: { error: 'Muitas tentativas, aguarde 15 minutos' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Usar IP real do proxy (mais seguro que trust proxy: true)
+  keyGenerator: (req) => {
+    return req.ip || req.connection.remoteAddress;
+  }
+};
 
-app.use('/:hashcode', rateLimit({
+const redirectLimiterConfig = {
   windowMs: 60 * 1000, // 1 minuto  
   max: 50,
-  message: { error: 'Muitos acessos, aguarde 1 minuto' }
-}));
+  message: { error: 'Muitos acessos, aguarde 1 minuto' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    return req.ip || req.connection.remoteAddress;
+  }
+};
+
+app.use('/api/shorten', rateLimit(limiterConfig));
+app.use('/:hashcode', rateLimit(redirectLimiterConfig));
 
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => logger.info('Conectado ao MongoDB'))
